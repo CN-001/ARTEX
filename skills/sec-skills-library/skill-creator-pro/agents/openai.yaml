@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill Creator Pro"
+  short_description: "Create and upgrade production-ready skills"
+  default_prompt: "Use $skill-creator-pro to scaffold a new production skill for this repository."

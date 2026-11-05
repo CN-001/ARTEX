@@ -1,0 +1,138 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-artex}
+      # 口令走 Docker secret 文件（不再是 .env/环境变量里的明文）
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      POSTGRES_DB: ${POSTGRES_DB:-artex}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    secrets:
+      - pg_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-artex} -d ${POSTGRES_DB:-artex}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      # 首次初始化数据目录可能较慢，start_period 内不计失败，
+      # 避免 fresh DB 场景下健康状态反复横跳。
+      start_period: 40s
+    restart: unless-stopped
+
+  artex:
+    # ⚠️ 无损重建的关键：优先使用已提交的完整环境镜像（含全部 apt/pip/工具）。
+    #    20261015 版 = 20261013 + NetExec/impacket + pwntools全家桶(z3/yara/volatility3/capa/frida/capstone)
+    #    + Ghidra12.1.4(decomp) + aircrack/wifite/hcxtools + one_gadget/ROPgadget/gef + kerbrute + pipm
+    #    旧标签 artex-full:20261013 与 artex-base:20261013-predock 均保留，勿删。
+    #    20261015-cache = 20261015 + 提示词缓存优化（system/工具/多轮历史 cache_control 断点
+    #    + worker 稳定前缀拆分）。
+    #    20261016-cachepanel = 上一个 + 仪表盘「按角色命中率」面板（llm_usage 按 agent lane 聚合）
+    #    + Windows 平台修复（技能路径斜杠化、evidence 目录 fsync）。
+    #    回滚：ARTEX_FULL_TAG=20261015-cache docker compose up -d artex（再往前：20261015）。
+    #    pull_policy: never 确保不会被误从 registry 拉取（它是本地镜像，不在任何 registry）。
+    #    若该镜像被删除，Compose 会回退到 build: . 从 Dockerfile 重建（此时需跑 restore_full.sh）。
+    image: artex-full:${ARTEX_FULL_TAG:-20261019-pentest}
+    pull_policy: never
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # DSN 由 config.PostgresDSN 从 secret 文件组装（口令不再出现在环境变量里）
+      # 显式置空：docker commit 的镜像 Env 里可能残留旧的 ARTEX_PG_DSN（含口令），
+      # 必须覆盖，否则 config 会优先使用环境变量而不是 secret 文件。
+      ARTEX_PG_DSN: ""
+      ARTEX_PG_PASSWORD_FILE: /app/secrets/pg_password
+      ARTEX_PG_HOST: postgres
+      ARTEX_PG_PORT: "5432"
+      ARTEX_PG_USER: 
+      ARTEX_PG_DB: 
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ARTEX_LLM_PROVIDER: ${ARTEX_LLM_PROVIDER:-}
+      ARTEX_LLM_MODEL: ${ARTEX_LLM_MODEL:-}
+      ARTEX_LLM_BASE_URL: ${ARTEX_LLM_BASE_URL:-}
+      ARTEX_LLM_PROXY: ${ARTEX_LLM_PROXY:-}
+      # 镜像里残留的 HTTP_PROXY 指向一个已经不存在的宿主代理（host.docker.internal:7877），
+      # 任何走 ProxyFromEnvironment 的组件（更新检查、Webhook、MCP http）都会失败。
+      # 实测容器直连公网正常，这里显式清空，统一走直连。
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: "localhost,127.0.0.1,::1,*.local,host.docker.internal,postgres,artex"
+      # 网络范围门禁（scope）的授权例外：逗号分隔 IP/CIDR/域名。默认空=门禁全开，
+      # 回环/链路本地/私网默认拒绝。需要访问本机/内网靶场时在这里显式放行。
+      ARTEX_SCOPE_ALLOW: ${ARTEX_SCOPE_ALLOW:-}
+      # 自定义工具（command/script）执行沙箱：1=以 nobody 身份在独立临时目录、带 ulimit
+      # 上限执行；0=关闭（回到以容器 root 执行，仅建议在完全可信的本地环境使用）。
+      ARTEX_TOOL_SANDBOX: ${ARTEX_TOOL_SANDBOX:-1}
+      # ---- CTF/渗透工具链 PATH 持久化 ----
+      # /app/data/tools/bin  在挂载卷里，docker compose build 重建容器后依然在（首选）
+      # /opt/ctf/bin         本次会话 apt/手动安装的位置（重建后会丢，需重跑 install_toolchain.sh）
+      # 用环境变量显式注入，因为 agent 的 Bash 工具走非交互 shell，不读 /etc/profile.d
+      PATH: /app/data/tools/bin:/app/data/tools/ctf/bin:/app/data/tools/ctf/jre/bin:/opt/ctf/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/cmdline-tools/latest/bin:/opt/ctf/jre/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+      SECLISTS: /opt/ctf/seclists
+      WORDLISTS: /opt/ctf/wordlists
+      # ---- 移动/Android 渗透 ----
+      ANDROID_SDK_ROOT: /opt/android-sdk
+      ANDROID_HOME: /opt/android-sdk
+      JAVA_HOME: /opt/ctf/jre
+      # WebFetch 的 User-Agent：默认伪装成普通浏览器，避免在目标日志里暴露框架名
+      # （原来 SDK 发的是 norma/0.4，等于自报家门）。改这里可自定义，需重建容器生效。
+      ARTEX_WEBFETCH_UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+      # LLM API key 静态加密（AES-256-GCM）用的主密钥文件。
+      # 密钥放在 D:\artex-secrets\ —— 特意在 E:\ARTEX-main 之外，
+      # 这样备份（只备 E:\ARTEX-main + pg_dump）不会把主密钥一起带走。
+      # ⚠️ 丢了主密钥 = 库里的 api_key 再也解不开，必须重新填写。
+      ARTEX_KEY_SECRET_FILE: /run/secrets/artex-master-key
+    ports:
+      # 8787/8788/9001/9002 落在 Windows 保留端口范围(8758-8857/8965-9064)，
+      # 主机侧绑定会失败(WSAEACCES)，临时改到 18xxx/19xxx 段（容器内端口不变）。
+      - "127.0.0.1:18787:8787"
+      - "127.0.0.1:18788:8788"
+      # MobSF：移动应用安全分析平台（APK/IPA 静态+动态）
+      # 仓库内启动命令见 /opt/ctf/bin/mobsf（gunicorn mobsf.MobSF.wsgi:application）
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:19001:9001"
+      - "127.0.0.1:19002:9002"
+    # 兜底：防止 postgres 与 artex 同时重启时 artex 抢跑（日志里出现过一次
+    # "connection refused -> 异常退出 code=1 -> 重启"）。健康检查通过前不建容器。
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8787/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+    volumes:
+      # 把数据目录（含 SQLite 等）绑定到项目根目录的 data/，
+      # 方便在宿主机直接查看/备份，容器重建也不丢。
+      - ./data:/app/data
+      # 把项目根目录的 skills 挂进容器（覆盖镜像内置的 /app/skills）；
+      # 改 skill 无需重建镜像，容器读的就是宿主机这份。
+      - ./skills:/app/skills
+      # JWT 签名密钥：**named volume**（不是 Windows bind mount）。
+      # 原因：Windows 绑定挂载上的文件永远是 0777，降权后的工具进程能直接读到
+      # jwt.key 并伪造管理员 token；named volume 里 chmod 600 真正生效，沙箱读不到。
+      - artex-secrets:/app/secrets
+      # LLM API key 静态加密的主密钥：同样放 named volume（chmod 600），只读语义由
+      # 权限保证；脱离 E:\ARTEX-main 备份范围（备份不含该卷）。
+      - artex-masterkey:/run/secrets
+    # 沙箱出网限制需要 iptables（见 start.sh harden_egress）：只给容器内网管权限，
+    # 用于按 uid 屏蔽私网/云元数据出站，不是宿主机权限。
+    secrets:
+      - pg_password
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  artex-secrets:
+  artex-masterkey:
+
+secrets:
+  pg_password:
+    file: ./secrets/pg_password.txt

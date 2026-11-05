@@ -1,0 +1,131 @@
+# =============================================================================
+# ARTEX — .gitignore（维护者：Aurox）
+# 只提交源码 / 文档 / 配置模板；密钥、运行时数据、超大二进制一律不提交
+# =============================================================================
+
+# ---------- 后端运行时数据 ----------
+/data/
+*.db
+*.db-wal
+*.db-shm
+config.json
+scheduler_state.json
+__pycache__/
+*.pyc
+*.pyo
+
+# ---------- 密钥与本地配置（绝对不要提交）----------
+/secrets/
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+.netrc
+.npmrc
+
+# ---------- 前端 ----------
+web/node_modules/
+web/.next/
+web/out/
+web/.turbo/
+web/.vercel/
+web/tsconfig.tsbuildinfo
+web/next-env.d.ts
+*.local
+
+# ---------- 开发工具 ----------
+.playwright-mcp/
+.playwright-cli/
+.idea/
+.vscode/
+*.swp
+*.swo
+*.iml
+go.work
+go.work.sum
+
+# ---------- 文档（沿用上游：本地文档不入库）----------
+/docs/
+
+# ---------- 操作系统 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 本地 AI/编辑器状态 ----------
+.claude/
+.cursor/
+
+# ---------- 构建产物 / 单二进制 ----------
+/artex
+/artex.exe
+/artex-linux
+/artex-windows*
+/artex-darwin*
+/artex.new
+/artex.new.sha256
+/artex.old
+/artex.failed
+/artex.upgrade.json
+/server/webui/dist/
+/dist/
+/pkg/
+*.test
+
+# ---------- JWT 签名密钥（运行时生成，绝不提交）----------
+/jwt.key
+
+# ---------- Docker 部署生成的本地环境 ----------
+.env
+
+# ---------- 历史快照（本机回滚用，不入库）----------
+/backups/
+
+# ---------- 调度器运行/模拟产物 ----------
+*-events.csv
+
+# ---------- bench 基准测试产物体 ----------
+/bench/
+/Dockerfile.bench
+/Dockerfile.bench.v2
+
+# ---------- 日志与临时文件 ----------
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# ---------- 技能库：保留 SKILL.md/脚本/文档，忽略第三方工具与二进制 ----------
+skills/**/tools/
+**/*.exe
+**/*.bin
+**/*.wasm
+**/*.zip
+**/*.7z
+**/*.rar
+**/*.tar
+**/*.tar.gz
+**/*.tgz
+**/*.iso
+**/*.msi
+**/*.dll
+**/*.so
+**/*.dylib
+**/*.jar
+**/*.apk
+**/*.pcap
+**/*.pcapng
+**/*.vhdx
+
+# ---------- 媒体（screenshots 除外）----------
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.raw

@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "messageID": "msg_0d16d44ad0016GlIi5F6CqhGvj",
+  "sessionID": "65303e3a-6de3-41d0-a6ec-a80c674ad4df",
+  "timestamp": 1790220013126,
+  "files": [
+    {
+      "path": "D:\\ku\\Huawei space\\ctf_skill\\tests\\install.py",
+      "relativePath": "tests\\install.py",
+      "action": "M",
+      "before": "9499dbdfdfbdd105bdae1c3fe5de06fa8da7663db8af8e2d8e336b2ed3db41d5",
+      "after": "dd3bf0df6427ea1bb171afd42d59164c4565e512108bdd78b624edf41243f923",
+      "beforeTimestamp": 1790220013061,
+      "diff": {
+        "additions": 2,
+        "deletions": 2
+      },
+      "afterTimestamp": 1790220013074
+    }
+  ]
+}

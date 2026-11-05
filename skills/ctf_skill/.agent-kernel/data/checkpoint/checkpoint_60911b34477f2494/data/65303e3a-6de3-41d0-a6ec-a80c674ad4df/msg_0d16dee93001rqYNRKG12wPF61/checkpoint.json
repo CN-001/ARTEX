@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "messageID": "msg_0d16dee93001rqYNRKG12wPF61",
+  "sessionID": "65303e3a-6de3-41d0-a6ec-a80c674ad4df",
+  "timestamp": 1790220049704,
+  "files": [
+    {
+      "path": "D:\\ku\\Huawei space\\ctf_skill\\tests\\test-plan.md",
+      "relativePath": "tests\\test-plan.md",
+      "action": "M",
+      "before": "bd07ad95bb76a8e272535beca134c7b1fb60ceab19fe274d3f7db52d35fa3a8e",
+      "after": "29367ad41da4a10bf2c596d46b8ff52c8c0f7207b2005d5570c13fa78021b648",
+      "beforeTimestamp": 1790220049636,
+      "diff": {
+        "additions": 1,
+        "deletions": 1
+      },
+      "afterTimestamp": 1790220049649
+    }
+  ]
+}

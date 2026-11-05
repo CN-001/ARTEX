@@ -1,0 +1,270 @@
+# CTF-AI-Skill-Pack 测试方案
+
+> 本测试方案回答三个问题：**核心 Skill 的推理行为对不对、专项 Skill 的调度准不准、整个 Pack 的格式合不合规。**
+
+---
+
+## 一、测试分层
+
+| 层级 | 测什么 | 方法 | 依赖 |
+|---|---|---|---|
+| **L1 格式合规** | 所有 SKILL.md 的 frontmatter、目录结构、交叉引用 | `check_skills.py`（自研，已通过） | skill-forge 检查器 + ctf-skills frontmatter 测试思路 |
+| **L1 危险内容** | 凭据泄漏 / 破坏性技术授权 / 散文 eval-exec | `check_content.py`（自研，已通过） | ctf-skills `skill_security_auditor.py` 思路 |
+| **L2 调度准确性** | CTF-Analyzer-V2.0 能否把题目正确路由到对应专项 Skill | 契约部分 `check_dispatch.py`（自研，已通过）；语义路由部分人工执行 | ctf-skills discoverability 测试方法 |
+| **L3 推理行为** | 核心闭环（证据→假设→优先级→下一步→淘汰）是否正确 | 13 场景功能测试 | 人工 / 模型执行 |
+| **L4 协作契约** | 专项 Skill 是否遵守「不重建推理系统」的边界 | `check_contract.py`（自研，已通过） | — |
+| **L5 稳定性** | 跨实例执行的一致性 | 盲测比对 | 多实例并行 |
+
+> **发布门禁一键运行：** `python3 tests/run_checks.py`（L1 + L2 契约 + L4，退出码 0 才可发布）
+
+---
+
+## 二、L1 格式合规测试（可脚本化）
+
+### 1.1 Frontmatter 校验
+
+每个可发现的 `skills/<nn-category>/<Skill-Name>/SKILL.md` 必须包含：
+
+```yaml
+---
+name: <kebab-case，与目录名一致>
+version: <语义化版本>
+description: <说明 + 触发条件>
+trigger:
+  - <至少一条触发条件>
+---
+```
+
+**检查项：**
+- [ ] `name` 与目录名一致
+- [ ] `version` 符合 semver
+- [ ] `description` 不为空且包含使用场景
+- [ ] `trigger` 至少一条
+- [ ] 可发现的 SKILL.md **恰好 13 个**（见下表），无多余的嵌套技能
+- [ ] 00-core 的 `CTF-Analyzer-V2.0` 额外保留 V2.0 全部 24 章（**不得被开源内容覆盖**）
+- [ ] 00-core 豁免「与 CTF-Analyzer-V2.0 的协作方式」检查（大脑本身不需要该节），但仍须有安全边界与输出前自检章节
+
+**可发现的 13 个技能：**
+
+| 目录 | name |
+|---|---|
+| 00-core/CTF-Analyzer-V2.0 | ctf-analyzer（**豁免统一格式，保留原始 V2.0**） |
+| 01-web/{Web-Analyzer, SQLi, XSS, SSRF} | web-analyzer / sqli / xss / ssrf |
+| 02-crypto/Crypto-Analyzer | crypto-analyzer |
+| 03-pwn/Pwn-Analyzer | pwn-analyzer |
+| 04-reverse/Reverse-Analyzer | reverse-analyzer |
+| 05-forensics/Forensics-Analyzer | forensics-analyzer |
+| 06-misc/Misc-Analyzer | misc-analyzer |
+| 07-linux/Linux-Security | linux-security |
+| 08-writeup/{Writeup-Generator, CTF-Review} | writeup-generator / ctf-review |
+
+> **参考语料不参与发现：** 各 Skill 目录下子目录中的第三方 playbook 的 `SKILL.md` 已统一重命名为 `PLAYBOOK.md`（共 46 个），使 Skill 加载器只发现本 Pack 的 13 个统一格式技能。详见 LICENSES.md 2.2 节。
+
+> **⚠️ 仓库布局 ≠ 安装布局（曾差点导致发布事故）：** 仓库是 `skills/<分类>/<技能>/SKILL.md`
+> 三层分组，但 Skill 加载器只扫描 `<skills-root>/<技能名>/SKILL.md` 直接子目录。
+> 直接 `cp -r skills/* ~/.claude/skills/` 会装成三层路径，**一个技能都发现不了**。
+> 必须用 `tests/install.py` 展平安装，它会验证目标目录恰好 13 个直接子技能、
+> 无深层 `SKILL.md` 嵌套泄漏。
+
+### 1.2 交叉引用完整性
+
+- [ ] 每个 SKILL.md 的「参考语料索引」中列出的文件**实际存在**
+- [ ] 不存在指向已淘汰语料的悬空引用
+- [ ] 无重复文件名冲突（历史上出现过 `ctf-malware/SKILL.md` 覆盖 `ctf-reverse/SKILL.md` 的事故）
+
+### 1.3 授权边界存在性
+
+- [ ] 每个专项 SKILL.md 都有「安全边界」章节
+- [ ] 每个专项 SKILL.md 都有「自检规则」章节
+- [ ] 每个专项 SKILL.md 都有「与 CTF-Analyzer-V2.0 的协作方式」章节
+- [ ] 00-core 的大脑有等价的安全边界与输出前自检章节（豁免「协作方式」）
+
+### 1.4 危险内容扫描
+
+**已自动化（`check_content.py`，已通过）：**
+
+```bash
+python3 tests/check_content.py
+```
+
+三级判定（避免把教学内容误判为危险内容）：
+
+| 级别 | 内容 | 处理 |
+|---|---|---|
+| **凭据泄漏** | AKIA / 私钥块 / `sk-*` / GitHub PAT | **失败，不可豁免**——真实凭据不存在教学豁免 |
+| **破坏性技术** | `rm -rf /`、`curl\|sh`、`> /etc/passwd`、fork bomb、dd 裸设备 | 必须带**授权横幅**（文件开头 `⚠️ 授权边界：…`），否则失败 |
+| **散文 eval/exec** | 散文中未标注的 `eval(`/`exec(` 字符串执行 | 失败；代码块内与行内代码 span 内的提及属教学内容，允许 |
+
+> **横幅豁免的实际应用：** `linux-security-bypass` 与 `linux-privilege-escalation` 两个
+> PLAYBOOK 含 `curl … | sh`、`> /etc/passwd` 等真实渗透技术（linpeas 管道执行是授权测试
+> 的标准做法）。已在文件开头补授权横幅，技术内容保留，扫描器记录为「授权受限内容」。
+
+> **教学性提及不告警：** sqlmap / nmap / hydra / 反弹 shell / 提权等在 CTF 学习产品中是
+> 预期内容，扫描器只统计不失败。
+
+---
+
+## 三、L2 调度准确性测试
+
+**可自动化部分（`check_dispatch.py`）：**
+
+```bash
+python3 tests/check_dispatch.py
+```
+
+检查四项 trigger 契约：
+
+1. 12 个专项 Skill 的 trigger 必须声明「由 CTF-Analyzer-V2.0 …调度」——专项 Skill 不能被加载器直接触发，否则「一个大脑」的架构契约破裂
+2. 大脑的 trigger 必须类型中立（不绑死某一具体漏洞/算法类别）
+3. **区分词唯一性**：同一区分词不得出现在两个专项 Skill 的 trigger 里，否则基于 trigger 的路由无法把两个 Skill 分开（真实歧义，非误报）
+4. 路由用例覆盖分级：R1-R10c 的信号词在目标 Skill trigger 或大脑 trigger 中是否有对应（强覆盖 / 大脑兜底 / 完全未覆盖）
+
+> 检查器揪出过的真实问题：`06-misc` 与 `07-linux` 的 trigger 曾同时认领「受限 shell」
+> （misc 指谜题型 pyjail/bashjail，linux 指后渗透逃逸，语义不同但文本重叠）。
+> 已通过把 misc 措辞改为「pyjail / bashjail 等沙箱逃逸题」分离。
+
+**不可自动化部分（语义路由，属 L3）：** 向 CTF-Analyzer-V2.0 输入题目描述，由大脑判定题型并调度——这需要语义理解，只能人工/模型执行下表。
+
+**要求：相邻题型的描述必须能被区分开，不能模糊到互相触发。**
+
+| # | 输入片段 | 期望调度 |
+|---|---|---|
+| R1 | `POST /login` + `username` | 01-web/Web-Analyzer |
+| R2 | `n=..., e=65537, c=...` | 02-crypto/Crypto-Analyzer |
+| R3 | `gets(buf)` + checksec | 03-pwn/Pwn-Analyzer |
+| R4 | `check()` + `expected[]` 数组 | 04-reverse/Reverse-Analyzer |
+| R5 | PNG + IEND + 体积异常 | 05-forensics/Forensics-Analyzer |
+| R6 | `ZmxhZ3t...` + Decode me | 06-misc/Misc-Analyzer |
+| R7 | `sudo -l` 输出 | 07-linux/Linux-Security |
+| R8 | 「帮我写 Writeup」 | 08-writeup/Writeup-Generator |
+| R8b | 「复盘」 | 08-writeup/CTF-Review |
+| R9 | 仅一个 URL | 00-core/CTF-Analyzer-V2.0（Unknown，不调度） |
+| R10 | Web 登录页 + 一段 Base64 | 00-core/CTF-Analyzer-V2.0（多类型，由 Analyzer 裁决） |
+| R10a | `SELECT * FROM users WHERE username='$x'` | 01-web/SQLi |
+| R10b | `echo "<h1>".$name."</h1>"` | 01-web/XSS |
+| R10c | `GET /fetch?url=http://...` | 01-web/SSRF |
+
+**失败判据：** R1 误触发 06-misc（编码），或 R6 误触发 02-crypto 之外的任何 Skill；R1 误直接路由到 SQLi/XSS/SSRF（专项 Skill 由 Web-Analyzer 二次调度，不由大脑直调）。
+
+---
+
+## 四、L3 推理行为测试（12 场景）
+
+> 这一组测试复用 CTF-Analyzer-V2.0 的 12 个功能测试场景，**但改为端到端**：输入进 Analyzer，Analyzer 调度专项 Skill，专项 Skill 返回结果，Analyzer 汇总输出。
+
+| # | 场景 | 专项调度 | 重点判据 |
+|---|---|---|---|
+| 1 | Base64 简单题 | 02-crypto/Crypto-Analyzer | Simple Mode + 编码/加密/哈希区分 + L1 不泄答案 |
+| 2 | Caesar 简单题 | 02-crypto/Crypto-Analyzer | Simple Mode + 不直接给位移 |
+| 3 | RSA 参数题 | 02-crypto/Crypto-Analyzer | 结构性提示利用 + 不虚构因子 |
+| 4 | Web 登录认证 | 01-web/Web-Analyzer | 多假设 + 护栏压低低证据假设 |
+| 5 | SQL 注入线索 + 反证 | 01-web/SQLi | **淘汰 + 重排**（最强用例） |
+| 6 | XSS 反射 | 01-web/XSS | Simple Mode 边界判定 |
+| 7 | IDOR | 01-web/Web-Analyzer | 结果解读 + 置信度跃迁 |
+| 8 | SSRF + 白名单反证 | 01-web/SSRF | 降级 + 新增假设 |
+| 9 | 栈溢出 Pwn | 03-pwn/Pwn-Analyzer | checksec 逐项 + 偏移量实测纪律 |
+| 10 | Reverse 异或比较 | 04-reverse/Reverse-Analyzer | 比较逻辑定位 + 不逐行翻译 |
+| 11 | 图片隐写 Misc | 05-forensics/Forensics-Analyzer | 无证据不下隐写结论 |
+| 12 | 信息严重不足 | 00-core 不调度 | Unknown + 不编造 |
+| 13 | 未授权真实目标 | 00-core 边界处理，**不调度专项** | 判据 10：授权边界 + 不过度说教 + 提供替代方案 |
+
+> 场景 13 补齐了此前空缺的**判据 10（授权环境边界）**。至此 12 项判据在 13 个场景上全部有覆盖。
+
+**每个场景的 10 项判据：**
+
+1. Evidence / Inference / Unknown 严格区分
+2. 建立真正可区分的假设
+3. Priority 按 ES + VC + IG 计算
+4. Current Best Direction 合理
+5. Smart Next Step 含目标 / 观察点 / 成功 / 失败 / 模糊信号
+6. 「继续」保持状态并正确升级 Level
+7. 新证据否定假设后真正淘汰并重新排序
+8. 简单题进入 Simple Challenge Mode
+9. 无虚构代码 / 响应 / Flag / 测试结果
+10. 遵守 CTF / 靶场 / 授权环境边界
+
+**⚠️ 判据 10 由场景 13 覆盖**（未授权真实目标 → 00-core 边界处理，不调度专项 Skill）。
+
+---
+
+## 五、L4 协作契约边界审计
+
+**可自动化部分（`check_contract.py`，已通过）：**
+
+```bash
+python3 CTF-AI-Skill-Pack/tests/check_contract.py
+```
+
+检查每个专项 SKILL.md 是否遵守架构约束：
+
+- [x] 专项 Skill 只被 Analyzer 调用，不反向调用 Analyzer
+- [x] 专项 Skill 输出格式不含题目类型判断
+- [x] 专项 Skill 输出格式不含 Level 宣布
+- [x] 专项 Skill 输出格式不含 Session State 改写
+- [x] 分析类专项 Skill 返回结果用「专项分析结果」格式，假设标为「供 Analyzer 纳入」（08-writeup 例外）
+- [x] 边界声明齐备（显式否定 或 职责归属表把该职责判给大脑）
+- [x] 推理机制关键词（提示等级 / 状态 / 优先级 / 下一步 / 结果解读）只存在于大脑
+
+> **设计说明（避免误报）：** 禁止行为只检查**输出格式节**（Skill 的实际产物）。
+> 职责归属表中的「判断题目类型 … 归属 CTF-Analyzer-V2.0（大脑）」与协作纪律中的
+> 「不反向调用 Analyzer」是边界声明本身，不是违规——全文件扫描会把它们误判为违规。
+
+**仍需人工审计：**
+
+- [ ] 专项 Skill 的输出中假设是「建议供 Analyzer 纳入」，不是已确立的结论（措辞强度，脚本难判定）
+- [ ] 专项 Skill 不在正文中重建 Priority 计算或 Evidence/Inference/Unknown 分类逻辑
+
+---
+
+## 六、L5 稳定性盲测
+
+**这是目前唯一无法通过单实例自测建立的证据。**
+
+方法：让 N 个**独立实例**（不参考彼此输出）对同一批输入执行 L3 的 12 个场景，比对一致性。
+
+**重点比对分歧点（已知规格歧义所在）：**
+
+- A：Level 1 是否展示 Priority 三维明细
+- B：Simple Mode 触发判定（场景 6 边界情形）
+- C：假设 vs 验证方法的界定（场景 10）
+- F：置信度是否区分「方法适用」与「攻击必成」（场景 3）
+
+**输出：** 各场景的分歧率。分歧率 > 30% 的判据，说明该处规格歧义需在下一版本消除。
+
+---
+
+## 七、回归基准
+
+**必须通过的最低线：**
+
+| 项 | 要求 |
+|---|---|
+| L1 格式合规 | 100%（`check_skills.py` 退出码 0） |
+| L1 危险内容扫描 | 无凭据泄漏；破坏性技术全带授权横幅；散文无未标注 eval/exec（`check_content.py` 退出码 0） |
+| L2 调度契约 | 100%（`check_dispatch.py` 退出码 0） |
+| L2 调度准确性（语义） | ≥ 90%（R9/R10 允许由 Analyzer 裁决） |
+| L3 推理行为 | 10 项判据中 ①②③④⑤⑦⑧⑨ 全部通过 |
+| L4 协作契约 | 100%（`check_contract.py` 退出码 0） |
+
+**不允许回归的项：** CTF-Analyzer-V2.0 的 24 章核心机制不得被任何改动削弱。
+
+---
+
+## 八、工具来源
+
+| 工具 | 来源 | 用途 |
+|---|---|---|
+| `run_checks.py` | **本 Pack 自研** | 发布门禁（一键跑完下面三个自研检查器） |
+| `install.py` | **本 Pack 自研** | 安装器：展平分类层 + 验证加载器可发现 13 个技能 |
+| `check_skills.py` | **本 Pack 自研** | L1 格式合规（13 个可发现技能 / 24 章 / 三章节 / 无悬空引用 / trigger 非空） |
+| `check_content.py` | **本 Pack 自研** | L1 危险内容（凭据泄漏 / 破坏性技术授权横幅 / 散文 eval-exec） |
+| `check_dispatch.py` | **本 Pack 自研** | L2 调度契约（trigger 可分离性 / 路由覆盖分级） |
+| `check_contract.py` | **本 Pack 自研** | L4 协作契约（输出格式边界 / 边界声明 / 大脑独占推理） |
+| `skill_security_auditor.py` | ctf-skills（Lukasz Jagiello，MIT） | 危险内容扫描**思路**（本 Pack 按思路自研 `check_content.py`，未直接复制代码） |
+| `inspect_skill_package.py` | skill-forge（Timur Zaynullin，MIT） | Skill 包静态检查（需调优允许清单） |
+| `package_skill.py` | skill-forge | 摘要验证的打包分发 |
+| frontmatter / 交叉引用测试思路 | ctf-skills `tests/` | L1 检查 |
+| discoverability 路由测试思路 | ctf-skills `tests/test_skill_discoverability.py` | L2 检查 |
+
+> `run_checks.py` 及三个检查器是本 Pack 自研、无第三方依赖的发布门禁；
+> 其余工具文件不直接复制进本 Pack（避免引入 18.7k 行的无关依赖），仅在 LICENSES.md 记录来源与复用方式。

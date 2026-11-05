@@ -1,0 +1,6 @@
+services:
+  artex:
+    environment:
+      # 让容器访问实验网段(Vmnet8)时绕过 7877 录制代理（该代理未运行时会把 MCP/curl 卡住）
+      NO_PROXY: "localhost,127.0.0.1,::1,*.local,host.docker.internal,postgres,artex,192.168.64.0/24"
+      no_proxy: "localhost,127.0.0.1,::1,*.local,host.docker.internal,postgres,artex,192.168.64.0/24"
